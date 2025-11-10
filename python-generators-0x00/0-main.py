@@ -1,4 +1,3 @@
-#!/usr/bin/python3
 import seed
 
 connection = seed.connect_db()
