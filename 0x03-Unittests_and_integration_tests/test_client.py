@@ -48,16 +48,14 @@ class TestGithubOrgClient(unittest.TestCase):
         """
         Test public_repos property
         """
-        mock_public_repos_url.return_value = (
-            "https://api.github.com/orgs/google/repos")
+        mock_public_repos_url.return_value = "https://api.github.com/orgs/google/repos"
         mock_get_json.return_value = [
             {"name": "repo1"}, {"name": "repo2"}]
         client = GithubOrgClient("google")
         result = client.public_repos
         self.assertEqual(result, ["repo1", "repo2"])
         mock_public_repos_url.assert_called_once()
-        mock_get_json.assert_called_once_with(
-            "https://api.github.com/orgs/google/repos")
+        mock_get_json.assert_called_once_with("https://api.github.com/orgs/google/repos")
 
     @parameterized.expand([
         ({"license": {"key": "my_license"}}, "my_license", True),
