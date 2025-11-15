@@ -3,13 +3,20 @@ from .models import User, Conversation, Message
 
 
 class UserSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    email = serializers.CharField()
+    phone_number = serializers.CharField(allow_blank=True, required=False)
+    role = serializers.CharField()
+
     class Meta:
         model = User
         fields = ['user_id', 'first_name', 'last_name', 'email', 'phone_number', 'role']
 
 
 class MessageSerializer(serializers.ModelSerializer):
-    sender_name = serializers.SerializerMethodField()  # compute sender full name
+    sender_name = serializers.SerializerMethodField()
+    message_body = serializers.CharField()  # explicit CharField
 
     class Meta:
         model = Message
