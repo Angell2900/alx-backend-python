@@ -5,21 +5,36 @@ from .models import User, Conversation, Message
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'phone_number', 'role']
+        fields = ['user_id', 'first_name', 'last_name', 'email', 'phone_number', 'role']
 
 
 class MessageSerializer(serializers.ModelSerializer):
-    sender = UserSerializer(read_only=True)
+    sender_name = serializers.SerializerMethodField()  # compute sender full name
 
     class Meta:
         model = Message
-        fields = ['id', 'sender', 'message_body', 'sent_at']
+        fields = ['message_id', 'sender', 'sender_name', 'conversation', 'message_body', 'sent_at']
+
+    def get_sender_name(self, obj):
+        return f"{obj.sender.first_name} {obj.sender.last_name}"
+
+    def validate_message_body(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Message body cannot be empty")
+        return value
 
 
 class ConversationSerializer(serializers.ModelSerializer):
     participants = UserSerializer(many=True, read_only=True)
     messages = MessageSerializer(many=True, read_only=True)
+    last_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
-        fields = ['id', 'participants', 'messages', 'created_at']
+        fields = ['conversation_id', 'participants', 'messages', 'last_message', 'created_at']
+
+    def get_last_message(self, obj):
+        last_msg = obj.messages.order_by('-sent_at').first()
+        if last_msg:
+            return last_msg.message_body
+        return None
