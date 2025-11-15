@@ -12,7 +12,8 @@ org_payload = {
     "hooks_url": "https://api.github.com/orgs/google/hooks",
     "issues_url": "https://api.github.com/orgs/google/issues",
     "members_url": "https://api.github.com/orgs/google/members{/member}",
-    "public_members_url": "https://api.github.com/orgs/google/public_members{/member}",
+    "public_members_url": (
+        "https://api.github.com/orgs/google/public_members{/member}"),
     "avatar_url": "https://github.com/images/error/google_happy.gif",
     "description": "Google LLC."
 }
