@@ -8,6 +8,11 @@ from unittest.mock import patch, Mock, PropertyMock
 from client import GithubOrgClient
 from fixtures import org_payload, repos_payload, expected_repos, apache2_repos
 
+test_cases = [
+    ({"license": {"key": "my_license"}}, "my_license", True),
+    ({"license": {"key": "other_license"}}, "my_license", False),
+]
+
 
 class TestGithubOrgClient(unittest.TestCase):
     """
@@ -53,10 +58,7 @@ class TestGithubOrgClient(unittest.TestCase):
         mock_public_repos_url.assert_called_once()
         mock_get_json.assert_called_once_with("https://api.github.com/orgs/google/repos")
 
-    @parameterized.expand([
-        ({"license": {"key": "my_license"}}, "my_license", True),
-        ({"license": {"key": "other_license"}}, "my_license", False),
-    ])
+    @parameterized.expand(test_cases)
     def test_has_license(self, repo, license_key, expected):
         """
         Test has_license method
