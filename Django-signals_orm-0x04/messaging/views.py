@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from .models import Message
 from django.contrib.auth.models import User
 from django.views.decorators.cache import cache_page
+from django.shortcuts import redirect
 
 @login_required
 @cache_page(60)
@@ -42,3 +43,15 @@ def inbox(request):
     """Show only unread messages using the custom manager."""
     unread_messages = Message.unread.unread_for_user(request.user).select_related('sender').only('id', 'sender', 'content', 'timestamp')
     return render(request, 'messaging/inbox.html', {'unread_messages': unread_messages})
+
+@login_required
+def delete_user(request):
+    """Allow the logged-in user to delete their account."""
+    user = request.user
+
+    if request.method == "POST":
+        user.delete()  # <-- this deletes the user from the database
+        messages.success(request, "Your account has been deleted.")
+        return redirect("home")  # or any landing page after deletion
+
+    return render(request, "messaging/delete_user_confirm.html")
