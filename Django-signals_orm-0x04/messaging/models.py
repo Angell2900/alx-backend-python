@@ -6,12 +6,16 @@ class Message(models.Model):
     receiver = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='received_messages')
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
+    read = models.BooleanField(default=False)
     edited = models.BooleanField(default=False)
     edited_at = models.DateTimeField(null=True, blank=True)
     edited_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='edited_messages')
     parent_message = models.ForeignKey(
         'self', null=True, blank=True, on_delete=models.CASCADE, related_name='replies'
     )
+    objects = models.Manager()  
+    unread = UnreadMessagesManager()  #
+
 
     def __str__(self):
         return f"{self.sender} -> {self.receiver}: {self.content[:20]}"

@@ -1,43 +1,32 @@
-from django.shortcuts import render, get_object_or_404, redirect
+from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from .models import Message
 from django.contrib.auth.models import User
 from django.views.decorators.cache import cache_page
-from .models import Message
-
 
 @login_required
-def delete_user(request):
-    user = request.user
-    if request.method == 'POST':
-        user.delete()
-        return redirect('home')  # Redirect to homepage after deletion
-    return render(request, 'messaging/delete_user.html', {'user': user})
-
-
-def get_threaded_replies(message):
-    """Recursively fetch replies for a message."""
-    thread = []
-    for reply in message.replies.all():
-        thread.append({
-            'message': reply,
-            'replies': get_threaded_replies(reply)
-        })
-    return thread
-
-@login_required
-@cache_page(60)  # Cache page for 60 seconds
+@cache_page(60)
 def conversation_messages(request, user_id):
-    """View to fetch messages between the logged-in user and another user."""
     other_user = get_object_or_404(User, id=user_id)
+
+    # Fetch only necessary fields for optimization
     messages = Message.objects.filter(
         sender=request.user,
         receiver=other_user
-    ).select_related('sender', 'receiver').prefetch_related('replies')
+    ).select_related('sender', 'receiver').prefetch_related('replies').only('id', 'content', 'timestamp', 'read', 'parent_message')
 
-    # Build threaded messages
     threads = []
+    def get_threaded_replies(message):
+        thread = []
+        for reply in message.replies.all().only('id', 'content', 'timestamp', 'read', 'parent_message'):
+            thread.append({
+                'message': reply,
+                'replies': get_threaded_replies(reply)
+            })
+        return thread
+
     for msg in messages:
-        if msg.parent_message is None:  # Only top-level messages
+        if msg.parent_message is None:
             threads.append({
                 'message': msg,
                 'replies': get_threaded_replies(msg)
@@ -47,3 +36,9 @@ def conversation_messages(request, user_id):
         'threads': threads,
         'other_user': other_user
     })
+
+@login_required
+def inbox(request):
+    """Show only unread messages using the custom manager."""
+    unread_messages = Message.unread.unread_for_user(request.user).select_related('sender').only('id', 'sender', 'content', 'timestamp')
+    return render(request, 'messaging/inbox.html', {'unread_messages': unread_messages})
