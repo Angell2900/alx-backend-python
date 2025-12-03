@@ -22,3 +22,12 @@ class MessageHistory(models.Model):
 
     def __str__(self):
         return f"History of message {self.message.id}"
+ 
+class notifications(models.Model):
+     message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='notifications')
+     recipient = models.ForeignKey(User, on_delete=models.CASCADE)
+     is_read = models.BooleanField(default=False)
+     sent_at = models.DateTimeField(auto_now_add=True)
+
+     def __str__(self):
+         return f"Notification for {self.recipient.username} about message {self.message.id}"
