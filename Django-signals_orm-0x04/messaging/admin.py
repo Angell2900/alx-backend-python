@@ -1,5 +1,10 @@
 from django.contrib import admin
-from .models import Message, Notification
+from .models import Message, MessageHistory
 
-admin.site.register(Message)
-admin.site.register(Notification)
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ('content', 'edited_by', 'edited_at', 'created_at')
+
+@admin.register(MessageHistory)
+class MessageHistoryAdmin(admin.ModelAdmin):
+    list_display = ('message', 'old_content', 'edited_by', 'edited_at')
