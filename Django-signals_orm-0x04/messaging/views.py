@@ -1,3 +1,7 @@
+from django.http import HttpResponse
+
+def home(request):
+    return HttpResponse("Hello, Messaging App is running!")
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from .models import Message

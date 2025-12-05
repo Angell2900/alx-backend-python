@@ -14,7 +14,7 @@ class Message(models.Model):
         'self', null=True, blank=True, on_delete=models.CASCADE, related_name='replies'
     )
     objects = models.Manager()  
-    unread = UnreadMessagesManager()  #
+   
 
 
     def __str__(self):
