@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Kubernetes Setup Script
+# This script sets up a local Kubernetes cluster using Minikube.
 # Task 0: Install Kubernetes and Set Up a Local Cluster
 
 set -e
@@ -13,7 +14,7 @@ if ! command -v minikube &> /dev/null; then
     
     # Install minikube on macOS
     curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-darwin-amd64
-    sudo install minikube-darwin-amd64 /usr/local/bin/minikube
+    sudo install ./minikube-darwin-amd64 /usr/local/bin/minikube
     rm minikube-darwin-amd64
     
     echo "✅ Minikube installed successfully!"
@@ -28,7 +29,7 @@ if ! command -v kubectl &> /dev/null; then
     # Install kubectl on macOS
     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/darwin/amd64/kubectl"
     chmod +x kubectl
-    sudo mv kubectl /usr/local/bin/
+    sudo mv ./kubectl /usr/local/bin/
     
     echo "✅ kubectl installed successfully!"
 else
