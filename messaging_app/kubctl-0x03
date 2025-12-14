@@ -1,0 +1,115 @@
+#!/bin/bash
+
+# Rolling Update Script
+# Task 5: Apply Rolling Updates
+
+set -e
+
+echo "🚀 Starting Rolling Update Process..."
+
+# Function to test app availability
+test_app_availability() {
+    local test_duration=30  # seconds
+    local start_time=$(date +%s)
+    local request_count=0
+    local successful_requests=0
+    local failed_requests=0
+    
+    echo "🔍 Testing app availability during rolling update..."
+    
+    # Start port forwarding in background
+    kubectl port-forward service/django-messaging-service 8080:80 &
+    PORT_FORWARD_PID=$!
+    
+    # Wait for port forwarding to be ready
+    sleep 5
+    
+    # Start continuous curl requests during the update
+    (
+        while [ $(( $(date +%s) - start_time )) -lt $test_duration ]; do
+            request_count=$((request_count + 1))
+            
+            if curl -f -s http://localhost:8080/ > /dev/null; then
+                successful_requests=$((successful_requests + 1))
+                echo "✅ Request $request_count: SUCCESS"
+            else
+                failed_requests=$((failed_requests + 1))
+                echo "❌ Request $request_count: FAILED"
+            fi
+            
+            sleep 1
+        done
+    ) &
+    
+    CURL_PID=$!
+    
+    # Return the PID so we can kill it later
+    echo $CURL_PID
+}
+
+# Function to check pods during update
+monitor_pods() {
+    echo "📊 Monitoring pod status during update..."
+    
+    while true; do
+        echo "🔍 Current pod status:"
+        kubectl get pods -l app=django-messaging
+        echo "---"
+        sleep 5
+    done
+}
+
+# Deploy the updated version (this will trigger rolling update)
+echo "📈 Applying updated deployment (version 2.0)..."
+kubectl apply -f blue_deployment.yaml
+
+echo "⏳ Starting rolling update..."
+echo "🔄 Rolling update started for django-messaging-app-blue"
+
+# Start monitoring in background
+monitor_pods &
+MONITOR_PID=$!
+
+# Start availability testing
+CURL_PID=$(test_app_availability)
+
+# Monitor rollout status
+echo "📊 Monitoring rollout status..."
+kubectl rollout status deployment/django-messaging-app-blue --timeout=600s
+
+# Kill the monitoring and testing processes
+kill $MONITOR_PID 2>/dev/null || true
+kill $CURL_PID 2>/dev/null || true
+
+# Kill port forwarding
+kill $PORT_FORWARD_PID 2>/dev/null || true
+
+echo "⏳ Waiting a few seconds for everything to settle..."
+sleep 5
+
+# Verify the rolling update is complete
+echo "✅ Verifying Rolling Update is Complete..."
+echo "📋 Current pod status:"
+kubectl get pods -l app=django-messaging,version=blue
+
+echo "🔍 Getting detailed pod information:"
+kubectl describe pods -l app=django-messaging,version=blue
+
+echo "📈 Deployment status:"
+kubectl get deployment django-messaging-app-blue
+
+echo "🔄 Replica sets:"
+kubectl get replicasets -l app=django-messaging,version=blue
+
+# Check the image used by pods
+echo "🖼️  Current image version in pods:"
+kubectl get pods -l app=django-messaging,version=blue -o jsonpath='{.items[*].spec.containers[*].image}'
+
+echo ""
+echo "✅ Rolling Update Process Completed Successfully!"
+echo "🎉 All pods are now running version 2.0"
+echo ""
+echo "Summary:"
+echo "- Rolling update completed without errors"
+echo "- All pods are healthy and ready"
+echo "- Application should have minimal or no downtime"

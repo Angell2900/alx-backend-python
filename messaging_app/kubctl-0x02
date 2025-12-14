@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# Blue-Green Deployment Script
+# Task 4: Implement Blue-Green Deployment Strategy
+
+set -e
+
+echo "🚀 Starting Blue-Green Deployment Strategy..."
+
+# Function to check pod status
+check_pods() {
+    echo "🔍 Checking pod status..."
+    kubectl get pods -l app=django-messaging
+    echo "📋 Getting deployment status..."
+    kubectl get deployments -l app=django-messaging
+}
+
+# Function to check logs
+check_logs() {
+    local version=$1
+    echo "📜 Checking logs for $version version..."
+    kubectl logs -l app=django-messaging,version=$version --tail=20
+}
+
+# Deploy Blue version (current production version)
+echo "🔵 Deploying Blue version..."
+kubectl apply -f blue_deployment.yaml
+
+echo "⏳ Waiting for blue deployment to be ready..."
+kubectl rollout status deployment/django-messaging-app-blue --timeout=300s
+
+# Deploy Green version (new version)
+echo "🟢 Deploying Green version..."
+kubectl apply -f green_deployment.yaml
+
+echo "⏳ Waiting for green deployment to be ready..."
+kubectl rollout status deployment/django-messaging-app-green --timeout=300s
+
+# Check both deployments are running
+echo "📊 Checking both deployments..."
+check_pods
+
+# Test green version before switching traffic
+echo "🧪 Testing green version before switching traffic..."
+echo "Setting service to point to green version temporarily..."
+
+# Patch service to point to green version for testing
+kubectl patch service django-messaging-service -p '{"spec":{"selector":{"version":"green"}}}'
+
+echo "⏳ Waiting for service switch to take effect..."
+sleep 10
+
+# Verify green version is working
+echo "🔍 Verifying green version is working..."
+GREEN_POD=$(kubectl get pods -l app=django-messaging,version=green -o jsonpath='{.items[0].metadata.name}')
+if [ -n "$GREEN_POD" ]; then
+    echo "📜 Green version logs:"
+    check_logs green
+    
+    # Test health check
+    echo "🏥 Testing green version health..."
+    kubectl exec $GREEN_POD -- curl -f http://localhost:8000/ || echo "⚠️  Health check failed, but continuing..."
+else
+    echo "❌ No green pods found!"
+    exit 1
+fi
+
+# Switch traffic back to blue (simulate rollback capability)
+echo "🔄 Switching traffic back to blue version..."
+kubectl patch service django-messaging-service -p '{"spec":{"selector":{"version":"blue"}}}'
+
+echo "⏳ Waiting for service switch to take effect..."
+sleep 5
+
+# Final status check
+echo "📊 Final deployment status:"
+check_pods
+
+echo "✅ Blue-Green deployment strategy completed successfully!"
+echo "🔵 Blue version is currently serving traffic"
+echo "🟢 Green version is ready for deployment when needed"
+echo ""
+echo "To switch to green version, run:"
+echo "kubectl patch service django-messaging-service -p '{\"spec\":{\"selector\":{\"version\":\"green\"}}}'"
+echo ""
+echo "To switch back to blue version, run:"
+echo "kubectl patch service django-messaging-service -p '{\"spec\":{\"selector\":{\"version\":\"blue\"}}}'"

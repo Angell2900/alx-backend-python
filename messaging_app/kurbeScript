@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# Kubernetes Setup Script
+# Task 0: Install Kubernetes and Set Up a Local Cluster
+
+set -e
+
+echo "🚀 Starting Kubernetes setup..."
+
+# Check if minikube is installed
+if ! command -v minikube &> /dev/null; then
+    echo "❌ Minikube is not installed. Installing minikube..."
+    
+    # Install minikube on macOS
+    curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-darwin-amd64
+    sudo install minikube-darwin-amd64 /usr/local/bin/minikube
+    rm minikube-darwin-amd64
+    
+    echo "✅ Minikube installed successfully!"
+else
+    echo "✅ Minikube is already installed!"
+fi
+
+# Check if kubectl is installed
+if ! command -v kubectl &> /dev/null; then
+    echo "❌ kubectl is not installed. Installing kubectl..."
+    
+    # Install kubectl on macOS
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/darwin/amd64/kubectl"
+    chmod +x kubectl
+    sudo mv kubectl /usr/local/bin/
+    
+    echo "✅ kubectl installed successfully!"
+else
+    echo "✅ kubectl is already installed!"
+fi
+
+# Start minikube cluster
+echo "🚀 Starting minikube cluster..."
+minikube start --driver=docker --cpus=2 --memory=2048mb
+
+echo "⏳ Waiting for cluster to be ready..."
+sleep 10
+
+# Verify cluster is running
+echo "🔍 Verifying cluster status..."
+kubectl cluster-info
+
+echo "📋 Getting available pods..."
+kubectl get pods --all-namespaces
+
+echo "🎉 Kubernetes cluster setup completed successfully!"
+echo "You can now deploy applications to your local Kubernetes cluster."
