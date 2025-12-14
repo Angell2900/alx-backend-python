@@ -1,115 +1,286 @@
 #!/bin/bash
 
-# Rolling Update Script
-# Task 5: Apply Rolling Updates
+# kubctl-0x03 - Rolling Update Script with Zero Downtime Verification
+# This script performs a rolling update of the Django messaging app and monitors for downtime
 
-set -e
+set -e  # Exit on error
 
-echo "🚀 Starting Rolling Update Process..."
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# Function to test app availability
-test_app_availability() {
-    local test_duration=30  # seconds
-    local start_time=$(date +%s)
-    local request_count=0
-    local successful_requests=0
-    local failed_requests=0
+# Configuration
+DEPLOYMENT_FILE="blue_deployment.yaml"
+DEPLOYMENT_NAME="django-messaging-app-blue"
+SERVICE_NAME="django-messaging-service"
+TEST_DURATION=60  # Duration to test for downtime during rollout (seconds)
+REQUEST_INTERVAL=0.5  # Interval between curl requests (seconds)
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Rolling Update Script - kubctl-0x03${NC}"
+echo -e "${BLUE}========================================${NC}\n"
+
+# Function to check if kubectl is available
+check_kubectl() {
+    if ! command -v kubectl &> /dev/null; then
+        echo -e "${RED}Error: kubectl is not installed or not in PATH${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ kubectl is available${NC}"
+}
+
+# Function to check if cluster is running
+check_cluster() {
+    echo -e "\n${YELLOW}Checking cluster status...${NC}"
     
-    echo "🔍 Testing app availability during rolling update..."
+    # Check if minikube is installed
+    if command -v minikube &> /dev/null; then
+        # Check minikube status
+        if ! minikube status &> /dev/null; then
+            echo -e "${RED}✗ Minikube cluster is not running${NC}"
+            echo -e "${YELLOW}Starting minikube cluster...${NC}"
+            minikube start
+            
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}✓ Minikube cluster started successfully${NC}"
+            else
+                echo -e "${RED}Error: Failed to start minikube cluster${NC}"
+                exit 1
+            fi
+        else
+            echo -e "${GREEN}✓ Minikube cluster is running${NC}"
+        fi
+    else
+        # For non-minikube clusters, just check kubectl connectivity
+        if ! kubectl cluster-info &> /dev/null; then
+            echo -e "${RED}✗ Cannot connect to Kubernetes cluster${NC}"
+            echo -e "${RED}Please ensure your cluster is running and kubectl is configured${NC}"
+            exit 1
+        else
+            echo -e "${GREEN}✓ Cluster is accessible${NC}"
+        fi
+    fi
     
-    # Start port forwarding in background
-    kubectl port-forward service/django-messaging-service 8080:80 &
+    # Verify kubectl can communicate with cluster
+    if ! kubectl get nodes &> /dev/null; then
+        echo -e "${RED}✗ Cannot communicate with cluster${NC}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✓ Cluster communication verified${NC}"
+}
+
+# Function to check if deployment file exists
+check_deployment_file() {
+    if [ ! -f "$DEPLOYMENT_FILE" ]; then
+        echo -e "${RED}Error: Deployment file '$DEPLOYMENT_FILE' not found${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Deployment file found: $DEPLOYMENT_FILE${NC}"
+}
+
+# Function to get service URL for testing
+get_service_url() {
+    # Try to get the service endpoint
+    # For minikube, we'll use minikube service URL or port-forward
+    
+    # Check if using minikube
+    if command -v minikube &> /dev/null && minikube status &> /dev/null; then
+        # Get minikube IP
+        MINIKUBE_IP=$(minikube ip 2>/dev/null || echo "127.0.0.1")
+        # For ClusterIP service, we'll need port-forward
+        echo "http://localhost:8080"
+    else
+        echo "http://localhost:8080"
+    fi
+}
+
+# Function to start port forwarding in background
+start_port_forward() {
+    echo -e "\n${YELLOW}Setting up port forwarding...${NC}"
+    
+    # Kill any existing port-forward on port 8080
+    pkill -f "kubectl port-forward.*8080:80" 2>/dev/null || true
+    sleep 2
+    
+    # Start port-forward in background
+    kubectl port-forward service/$SERVICE_NAME 8080:80 > /dev/null 2>&1 &
     PORT_FORWARD_PID=$!
     
-    # Wait for port forwarding to be ready
-    sleep 5
+    # Wait for port-forward to be ready
+    sleep 3
     
-    # Start continuous curl requests during the update
-    (
-        while [ $(( $(date +%s) - start_time )) -lt $test_duration ]; do
-            request_count=$((request_count + 1))
-            
-            if curl -f -s http://localhost:8080/ > /dev/null; then
-                successful_requests=$((successful_requests + 1))
-                echo "✅ Request $request_count: SUCCESS"
-            else
-                failed_requests=$((failed_requests + 1))
-                echo "❌ Request $request_count: FAILED"
-            fi
-            
-            sleep 1
-        done
-    ) &
-    
-    CURL_PID=$!
-    
-    # Return the PID so we can kill it later
-    echo $CURL_PID
+    if ps -p $PORT_FORWARD_PID > /dev/null; then
+        echo -e "${GREEN}✓ Port forwarding started (PID: $PORT_FORWARD_PID)${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}⚠ Port forwarding may not be available${NC}"
+        return 1
+    fi
 }
 
-# Function to check pods during update
-monitor_pods() {
-    echo "📊 Monitoring pod status during update..."
+# Function to stop port forwarding
+stop_port_forward() {
+    if [ ! -z "$PORT_FORWARD_PID" ] && ps -p $PORT_FORWARD_PID > /dev/null 2>&1; then
+        kill $PORT_FORWARD_PID 2>/dev/null || true
+        echo -e "${GREEN}✓ Port forwarding stopped${NC}"
+    fi
+}
+
+# Function to test app availability (background process)
+test_app_availability() {
+    local url=$1
+    local log_file=$2
+    local success_count=0
+    local failure_count=0
+    local start_time=$(date +%s)
+    
+    echo -e "\n${YELLOW}Starting continuous availability testing...${NC}"
+    echo "Timestamp,Status,Response_Time,HTTP_Code" > $log_file
     
     while true; do
-        echo "🔍 Current pod status:"
-        kubectl get pods -l app=django-messaging
-        echo "---"
-        sleep 5
+        current_time=$(date +%s)
+        elapsed=$((current_time - start_time))
+        
+        # Stop after TEST_DURATION + buffer time for rollout
+        if [ $elapsed -gt $((TEST_DURATION + 30)) ]; then
+            break
+        fi
+        
+        timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+        
+        # Perform curl request with timeout
+        response=$(curl -s -w "\n%{http_code}\n%{time_total}" -m 5 "$url" 2>/dev/null || echo -e "\nERROR\n0")
+        
+        http_code=$(echo "$response" | tail -n 2 | head -n 1)
+        response_time=$(echo "$response" | tail -n 1)
+        
+        if [ "$http_code" = "200" ] || [ "$http_code" = "301" ] || [ "$http_code" = "302" ]; then
+            status="SUCCESS"
+            ((success_count++))
+        else
+            status="FAILURE"
+            ((failure_count++))
+            echo -e "${RED}✗ Request failed at $timestamp (HTTP: $http_code)${NC}"
+        fi
+        
+        echo "$timestamp,$status,$response_time,$http_code" >> $log_file
+        
+        sleep $REQUEST_INTERVAL
     done
+    
+    # Summary
+    total_requests=$((success_count + failure_count))
+    if [ $total_requests -gt 0 ]; then
+        success_rate=$(awk "BEGIN {printf \"%.2f\", ($success_count/$total_requests)*100}")
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}  Availability Test Summary${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "Total Requests: $total_requests"
+        echo -e "Successful: ${GREEN}$success_count${NC}"
+        echo -e "Failed: ${RED}$failure_count${NC}"
+        echo -e "Success Rate: ${GREEN}${success_rate}%${NC}"
+        
+        if [ $failure_count -eq 0 ]; then
+            echo -e "\n${GREEN}✓ ZERO DOWNTIME ACHIEVED!${NC}"
+        else
+            echo -e "\n${YELLOW}⚠ Some requests failed during rollout${NC}"
+        fi
+    fi
 }
 
-# Deploy the updated version (this will trigger rolling update)
-echo "📈 Applying updated deployment (version 2.0)..."
-kubectl apply -f blue_deployment.yaml
+# Main execution
+main() {
+    echo -e "${YELLOW}Step 1: Verifying prerequisites...${NC}"
+    check_kubectl
+    check_cluster
+    check_deployment_file
+    
+    echo -e "\n${YELLOW}Step 2: Checking current deployment status...${NC}"
+    if kubectl get deployment $DEPLOYMENT_NAME &> /dev/null; then
+        echo -e "${GREEN}✓ Deployment exists: $DEPLOYMENT_NAME${NC}"
+        kubectl get deployment $DEPLOYMENT_NAME
+    else
+        echo -e "${YELLOW}⚠ Deployment not found. It will be created.${NC}"
+    fi
+    
+    echo -e "\n${YELLOW}Step 3: Setting up availability monitoring...${NC}"
+    SERVICE_URL=$(get_service_url)
+    LOG_FILE="rollout_test_$(date +%Y%m%d_%H%M%S).log"
+    
+    # Start port forwarding
+    PORT_FORWARD_STARTED=false
+    if start_port_forward; then
+        PORT_FORWARD_STARTED=true
+    fi
+    
+    # Start availability testing in background
+    if [ "$PORT_FORWARD_STARTED" = true ]; then
+        test_app_availability "$SERVICE_URL" "$LOG_FILE" &
+        TEST_PID=$!
+        echo -e "${GREEN}✓ Availability monitoring started (PID: $TEST_PID)${NC}"
+        echo -e "${BLUE}  Logging to: $LOG_FILE${NC}"
+    else
+        echo -e "${YELLOW}⚠ Skipping availability tests (port-forward unavailable)${NC}"
+    fi
+    
+    sleep 2
+    
+    echo -e "\n${YELLOW}Step 4: Applying rolling update...${NC}"
+    echo -e "${BLUE}Executing: kubectl apply -f $DEPLOYMENT_FILE${NC}"
+    kubectl apply -f $DEPLOYMENT_FILE
+    
+    echo -e "\n${YELLOW}Step 5: Monitoring rollout progress...${NC}"
+    echo -e "${BLUE}Executing: kubectl rollout status deployment/$DEPLOYMENT_NAME${NC}\n"
+    
+    # Monitor rollout with timeout
+    if timeout 300 kubectl rollout status deployment/$DEPLOYMENT_NAME --watch=true; then
+        echo -e "\n${GREEN}✓ Rollout completed successfully!${NC}"
+    else
+        echo -e "\n${RED}✗ Rollout timed out or failed${NC}"
+        ROLLOUT_FAILED=true
+    fi
+    
+    echo -e "\n${YELLOW}Step 6: Verifying deployment...${NC}"
+    echo -e "\n${BLUE}Current Pods:${NC}"
+    kubectl get pods -l app=django-messaging --show-labels
+    
+    echo -e "\n${BLUE}Deployment Details:${NC}"
+    kubectl get deployment $DEPLOYMENT_NAME -o wide
+    
+    echo -e "\n${BLUE}Replica Sets:${NC}"
+    kubectl get rs -l app=django-messaging
+    
+    echo -e "\n${BLUE}Recent Events:${NC}"
+    kubectl get events --sort-by=.lastTimestamp | grep $DEPLOYMENT_NAME | tail -n 10
+    
+    # Wait for availability test to complete
+    if [ ! -z "$TEST_PID" ] && ps -p $TEST_PID > /dev/null 2>&1; then
+        echo -e "\n${YELLOW}Waiting for availability tests to complete...${NC}"
+        wait $TEST_PID
+    fi
+    
+    # Cleanup port forwarding
+    if [ "$PORT_FORWARD_STARTED" = true ]; then
+        stop_port_forward
+    fi
+    
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}  Rolling Update Complete!${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    if [ -f "$LOG_FILE" ]; then
+        echo -e "\n${BLUE}Detailed test results saved to: $LOG_FILE${NC}"
+    fi
+    
+    echo -e "\n${GREEN}✓ Script execution completed${NC}"
+}
 
-echo "⏳ Starting rolling update..."
-echo "🔄 Rolling update started for django-messaging-app-blue"
+# Trap to cleanup on exit
+trap 'stop_port_forward; exit' INT TERM EXIT
 
-# Start monitoring in background
-monitor_pods &
-MONITOR_PID=$!
-
-# Start availability testing
-CURL_PID=$(test_app_availability)
-
-# Monitor rollout status
-echo "📊 Monitoring rollout status..."
-kubectl rollout status deployment/django-messaging-app-blue --timeout=600s
-
-# Kill the monitoring and testing processes
-kill $MONITOR_PID 2>/dev/null || true
-kill $CURL_PID 2>/dev/null || true
-
-# Kill port forwarding
-kill $PORT_FORWARD_PID 2>/dev/null || true
-
-echo "⏳ Waiting a few seconds for everything to settle..."
-sleep 5
-
-# Verify the rolling update is complete
-echo "✅ Verifying Rolling Update is Complete..."
-echo "📋 Current pod status:"
-kubectl get pods -l app=django-messaging,version=blue
-
-echo "🔍 Getting detailed pod information:"
-kubectl describe pods -l app=django-messaging,version=blue
-
-echo "📈 Deployment status:"
-kubectl get deployment django-messaging-app-blue
-
-echo "🔄 Replica sets:"
-kubectl get replicasets -l app=django-messaging,version=blue
-
-# Check the image used by pods
-echo "🖼️  Current image version in pods:"
-kubectl get pods -l app=django-messaging,version=blue -o jsonpath='{.items[*].spec.containers[*].image}'
-
-echo ""
-echo "✅ Rolling Update Process Completed Successfully!"
-echo "🎉 All pods are now running version 2.0"
-echo ""
-echo "Summary:"
-echo "- Rolling update completed without errors"
-echo "- All pods are healthy and ready"
-echo "- Application should have minimal or no downtime"
+# Run main function
+main
