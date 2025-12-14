@@ -1,54 +1,197 @@
 #!/bin/bash
 
-# Kubernetes Setup Script
-# This script sets up a local Kubernetes cluster using Minikube.
-# Task 0: Install Kubernetes and Set Up a Local Cluster
+# kurbeScript - Kubernetes Cluster Setup and Verification Script
+# This script starts a Kubernetes cluster, verifies it's running, and retrieves available pods
 
-set -e
+set -e  # Exit on error
 
-echo "🚀 Starting Kubernetes setup..."
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# Check if minikube is installed
-if ! command -v minikube &> /dev/null; then
-    echo "❌ Minikube is not installed. Installing minikube..."
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Kubernetes Cluster Setup Script${NC}"
+echo -e "${BLUE}========================================${NC}\n"
+
+# Function to check if minikube is installed
+check_minikube_installed() {
+    echo -e "${YELLOW}Checking if minikube is installed...${NC}"
     
-    # Install minikube on macOS
-    curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-darwin-amd64
-    sudo install ./minikube-darwin-amd64 /usr/local/bin/minikube
-    rm minikube-darwin-amd64
+    if command -v minikube &> /dev/null; then
+        MINIKUBE_VERSION=$(minikube version --short 2>/dev/null || minikube version | grep -oP 'v\d+\.\d+\.\d+' | head -1)
+        echo -e "${GREEN}✓ Minikube is installed: $MINIKUBE_VERSION${NC}"
+        return 0
+    else
+        echo -e "${RED}✗ Minikube is not installed${NC}"
+        echo -e "${YELLOW}Please install minikube first:${NC}"
+        echo -e "  For macOS: brew install minikube"
+        echo -e "  For Linux: curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && sudo install minikube-linux-amd64 /usr/local/bin/minikube"
+        exit 1
+    fi
+}
+
+# Function to check if kubectl is installed
+check_kubectl_installed() {
+    echo -e "\n${YELLOW}Checking if kubectl is installed...${NC}"
     
-    echo "✅ Minikube installed successfully!"
-else
-    echo "✅ Minikube is already installed!"
-fi
+    if command -v kubectl &> /dev/null; then
+        KUBECTL_VERSION=$(kubectl version --client --short 2>/dev/null | grep -oP 'v\d+\.\d+\.\d+' || kubectl version --client -o json 2>/dev/null | grep -oP '"gitVersion":"v\d+\.\d+\.\d+"' | cut -d'"' -f4)
+        echo -e "${GREEN}✓ kubectl is installed: $KUBECTL_VERSION${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}⚠ kubectl is not installed separately${NC}"
+        echo -e "${BLUE}  Will use minikube's kubectl${NC}"
+        return 1
+    fi
+}
 
-# Check if kubectl is installed
-if ! command -v kubectl &> /dev/null; then
-    echo "❌ kubectl is not installed. Installing kubectl..."
+# Function to start the Kubernetes cluster
+start_cluster() {
+    echo -e "\n${YELLOW}Starting Kubernetes cluster...${NC}"
     
-    # Install kubectl on macOS
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/darwin/amd64/kubectl"
-    chmod +x kubectl
-    sudo mv ./kubectl /usr/local/bin/
+    # Check if minikube is already running
+    if minikube status &> /dev/null; then
+        echo -e "${GREEN}✓ Minikube cluster is already running${NC}"
+        minikube status
+        return 0
+    fi
     
-    echo "✅ kubectl installed successfully!"
-else
-    echo "✅ kubectl is already installed!"
-fi
+    echo -e "${BLUE}Starting minikube cluster (this may take a few minutes)...${NC}"
+    
+    # Start minikube with recommended settings
+    if minikube start --driver=docker 2>&1 | tee /tmp/minikube_start.log; then
+        echo -e "${GREEN}✓ Minikube cluster started successfully${NC}"
+    else
+        # If docker driver fails, try with other drivers
+        echo -e "${YELLOW}⚠ Docker driver failed, trying with default driver...${NC}"
+        if minikube start 2>&1 | tee /tmp/minikube_start.log; then
+            echo -e "${GREEN}✓ Minikube cluster started successfully${NC}"
+        else
+            echo -e "${RED}✗ Failed to start minikube cluster${NC}"
+            echo -e "${RED}Check the log at /tmp/minikube_start.log for details${NC}"
+            exit 1
+        fi
+    fi
+    
+    # Wait for cluster to be ready
+    echo -e "\n${YELLOW}Waiting for cluster to be fully ready...${NC}"
+    sleep 5
+    
+    # Display cluster status
+    echo -e "\n${BLUE}Cluster Status:${NC}"
+    minikube status
+}
 
-# Start minikube cluster
-echo "🚀 Starting minikube cluster..."
-minikube start --driver=docker --cpus=2 --memory=2048mb
+# Function to verify cluster is running using kubectl cluster-info
+verify_cluster() {
+    echo -e "\n${YELLOW}Verifying cluster is running with kubectl cluster-info...${NC}"
+    
+    # Try with kubectl first, fall back to minikube kubectl if needed
+    if command -v kubectl &> /dev/null; then
+        KUBECTL_CMD="kubectl"
+    else
+        KUBECTL_CMD="minikube kubectl --"
+    fi
+    
+    echo -e "${BLUE}Running: $KUBECTL_CMD cluster-info${NC}\n"
+    
+    if $KUBECTL_CMD cluster-info 2>&1; then
+        echo -e "\n${GREEN}✓ Cluster is running and accessible${NC}"
+    else
+        echo -e "\n${RED}✗ Failed to get cluster info${NC}"
+        exit 1
+    fi
+    
+    # Additional verification - get nodes
+    echo -e "\n${BLUE}Cluster Nodes:${NC}"
+    $KUBECTL_CMD get nodes
+}
 
-echo "⏳ Waiting for cluster to be ready..."
-sleep 10
+# Function to retrieve available pods
+retrieve_pods() {
+    echo -e "\n${YELLOW}Retrieving available pods...${NC}"
+    
+    # Determine kubectl command
+    if command -v kubectl &> /dev/null; then
+        KUBECTL_CMD="kubectl"
+    else
+        KUBECTL_CMD="minikube kubectl --"
+    fi
+    
+    echo -e "${BLUE}Running: $KUBECTL_CMD get pods --all-namespaces${NC}\n"
+    
+    # Get all pods from all namespaces
+    if $KUBECTL_CMD get pods --all-namespaces -o wide; then
+        echo -e "\n${GREEN}✓ Successfully retrieved pod information${NC}"
+    else
+        echo -e "\n${YELLOW}⚠ No pods found or error retrieving pods${NC}"
+        echo -e "${BLUE}This is normal for a fresh cluster with no workloads deployed${NC}"
+    fi
+    
+    # Count pods
+    POD_COUNT=$($KUBECTL_CMD get pods --all-namespaces --no-headers 2>/dev/null | wc -l | xargs)
+    echo -e "\n${BLUE}Total pods in cluster: $POD_COUNT${NC}"
+    
+    # Get pods in default namespace
+    echo -e "\n${BLUE}Pods in default namespace:${NC}"
+    $KUBECTL_CMD get pods 2>/dev/null || echo "No pods in default namespace"
+}
 
-# Verify cluster is running
-echo "🔍 Verifying cluster status..."
-kubectl cluster-info
+# Function to display cluster information
+display_cluster_info() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}  Cluster Information Summary${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Determine kubectl command
+    if command -v kubectl &> /dev/null; then
+        KUBECTL_CMD="kubectl"
+    else
+        KUBECTL_CMD="minikube kubectl --"
+    fi
+    
+    echo -e "${YELLOW}Kubernetes Version:${NC}"
+    $KUBECTL_CMD version --short 2>/dev/null || $KUBECTL_CMD version --client -o json 2>/dev/null | grep gitVersion | head -1
+    
+    echo -e "\n${YELLOW}Cluster Context:${NC}"
+    $KUBECTL_CMD config current-context
+    
+    echo -e "\n${YELLOW}Cluster API Server:${NC}"
+    $KUBECTL_CMD cluster-info | head -1
+    
+    echo -e "\n${YELLOW}Available Namespaces:${NC}"
+    $KUBECTL_CMD get namespaces
+}
 
-echo "📋 Getting available pods..."
-kubectl get pods --all-namespaces
+# Main execution
+main() {
+    # Step 1: Check if minikube is installed
+    check_minikube_installed
+    
+    # Step 2: Check if kubectl is installed
+    check_kubectl_installed
+    
+    # Step 3: Start the Kubernetes cluster
+    start_cluster
+    
+    # Step 4: Verify the cluster is running
+    verify_cluster
+    
+    # Step 5: Retrieve available pods
+    retrieve_pods
+    
+    # Step 6: Display summary information
+    display_cluster_info
+    
+    echo -e "\n${GREEN}========================================${NC}"
+    echo -e "${GREEN}  ✓ Setup Complete!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "\n${BLUE}Your Kubernetes cluster is ready to use!${NC}"
+    echo -e "${BLUE}You can now deploy applications using kubectl commands.${NC}\n"
+}
 
-echo "🎉 Kubernetes cluster setup completed successfully!"
-echo "You can now deploy applications to your local Kubernetes cluster."
+# Run main function
+main
