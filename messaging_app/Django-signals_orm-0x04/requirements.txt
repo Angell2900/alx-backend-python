@@ -1,11 +1,5 @@
-<<<<<<< HEAD
 asgiref==3.10.0
 Django==5.2.8
 djangorestframework==3.16.1
 drf-nested-routers==0.95.0
 sqlparse==0.5.3
-=======
-asgiref==3.11.0
-Django==6.0
-sqlparse==0.5.4
->>>>>>> c89469c (Initial commit)

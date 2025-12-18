@@ -1,0 +1,27 @@
+# Commands used to apply Ingress configuration
+
+# Install Nginx Ingress Controller
+minikube addons enable ingress
+
+# Wait for ingress controller to be ready
+kubectl get pods -n ingress-nginx
+
+# Apply the ingress configuration
+kubectl apply -f ingress.yaml
+
+# Verify ingress was created
+kubectl get ingress
+
+# Get ingress details
+kubectl describe ingress django-messaging-ingress
+
+# Add host entries for local testing (optional)
+# Add these to your /etc/hosts file:
+# 127.0.0.1 messaging-app.local
+# 127.0.0.1 api.messaging-app.local
+
+# Test ingress access (after port forwarding or tunnel)
+curl -H "Host: messaging-app.local" http://localhost/
+
+# Check ingress logs
+kubectl logs -n ingress-nginx deployment/ingress-nginx-controller

@@ -1,0 +1,77 @@
+#!/bin/bash
+
+# Kubernetes Scaling Script
+# Task 2: Scale the Django App Using Kubernetes
+
+set -e
+
+echo "🚀 Starting Kubernetes scaling operations..."
+
+# Scale the deployment to 3 replicas
+echo "📈 Scaling django-messaging-app to 3 replicas..."
+kubectl scale deployment django-messaging-app --replicas=3
+
+# Wait a moment for scaling to take effect
+sleep 5
+
+# Verify that multiple pods are running
+echo "🔍 Verifying pods are running..."
+kubectl get pods
+
+# Get pod details with labels
+echo "📋 Getting detailed pod information..."
+kubectl get pods -l app=django-messaging
+
+# Install wrk if not available (for load testing)
+if ! command -v wrk &> /dev/null; then
+    echo "🔧 Installing wrk for load testing..."
+    
+    # Install wrk on macOS using Homebrew
+    if command -v brew &> /dev/null; then
+        brew install wrk
+    else
+        echo "❌ Homebrew not found. Please install wrk manually for load testing."
+        echo "You can install it with: brew install wrk"
+    fi
+fi
+
+# Perform load testing if wrk is available
+if command -v wrk &> /dev/null; then
+    echo "🔥 Starting load test with wrk..."
+    echo "Note: This test assumes the service is accessible via port forwarding or ingress"
+    
+    # Get the service endpoint
+    SERVICE_ENDPOINT=$(kubectl get service django-messaging-service -o jsonpath='{.spec.clusterIP}')
+    
+    # Start port forwarding in background
+    echo "🔗 Setting up port forwarding..."
+    kubectl port-forward service/django-messaging-service 8080:80 &
+    PORT_FORWARD_PID=$!
+    
+    # Wait for port forwarding to be ready
+    sleep 5
+    
+    # Perform load test
+    echo "⚡ Running load test..."
+    wrk -t12 -c400 -d30s http://localhost:8080/ || echo "Load test completed with warnings"
+    
+    # Kill port forwarding
+    kill $PORT_FORWARD_PID 2>/dev/null || true
+else
+    echo "⚠️  wrk not available. Skipping load test."
+    echo "To perform load testing, install wrk with: brew install wrk"
+fi
+
+# Monitor resource usage
+echo "📊 Monitoring resource usage..."
+kubectl top pods -l app=django-messaging
+
+# Get deployment status
+echo "📈 Deployment status:"
+kubectl get deployment django-messaging-app
+
+# Show replica sets
+echo "🔄 Replica sets:"
+kubectl get replicasets -l app=django-messaging
+
+echo "✅ Kubernetes scaling operations completed successfully!"
