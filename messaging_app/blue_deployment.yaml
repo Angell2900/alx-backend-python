@@ -1,12 +1,13 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: django-messaging-app-blue
+  name: django-messaging-blue
   labels:
     app: django-messaging
     version: blue
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: django-messaging
@@ -19,32 +20,33 @@ spec:
     spec:
       containers:
       - name: django-app
-        image: django-messaging-app:2.0
+        image: angell2900/messaging-app:2.0
         ports:
         - containerPort: 8000
+          name: http
         env:
-        - name: DEBUG
-          value: "True"
-        - name: SECRET_KEY
-          value: "django-insecure-change-me"
-        - name: ALLOWED_HOSTS
-          value: "*"
+        - name: DJANGO_SETTINGS_MODULE
+          value: "messaging.settings"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: VERSION
+          value: "blue-v2.0"
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "250m"
+            memory: "128Mi"
+            cpu: "100m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "256Mi"
+            cpu: "200m"
         livenessProbe:
           httpGet:
-            path: /
+            path: /api/health/
             port: 8000
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /
+            path: /api/health/
             port: 8000
           initialDelaySeconds: 5
           periodSeconds: 5

@@ -1,77 +1,193 @@
 #!/bin/bash
 
-# Kubernetes Scaling Script
-# Task 2: Scale the Django App Using Kubernetes
+set -e  # Exit on any error
 
-set -e
+echo "========================================="
+echo "Kubernetes Scaling and Load Testing Script"
+echo "========================================="
 
-echo "🚀 Starting Kubernetes scaling operations..."
+# Check if cluster is running
+if ! kubectl cluster-info &> /dev/null; then
+    echo "ERROR: Kubernetes cluster is not running. Please run kurbeScript first."
+    exit 1
+fi
+
+echo "✓ Kubernetes cluster is running"
+
+# Check if deployment exists
+if ! kubectl get deployment django-messaging-app &> /dev/null; then
+    echo "ERROR: Deployment django-messaging-app not found. Please apply deployment.yaml first."
+    echo "Run: kubectl apply -f deployment.yaml"
+    exit 1
+fi
+
+echo ""
+echo "========================================="
+echo "Step 1: Scaling to 3 replicas"
+echo "========================================="
 
 # Scale the deployment to 3 replicas
-echo "📈 Scaling django-messaging-app to 3 replicas..."
+echo "Scaling deployment to 3 replicas..."
 kubectl scale deployment django-messaging-app --replicas=3
 
-# Wait a moment for scaling to take effect
-sleep 5
+# Wait for pods to be ready
+echo "Waiting for pods to be ready..."
+sleep 10
 
-# Verify that multiple pods are running
-echo "🔍 Verifying pods are running..."
-kubectl get pods
-
-# Get pod details with labels
-echo "📋 Getting detailed pod information..."
+# Verify multiple pods are running
+echo ""
+echo "Checking pod status:"
 kubectl get pods -l app=django-messaging
 
-# Install wrk if not available (for load testing)
-if ! command -v wrk &> /dev/null; then
-    echo "🔧 Installing wrk for load testing..."
-    
-    # Install wrk on macOS using Homebrew
-    if command -v brew &> /dev/null; then
-        brew install wrk
-    else
-        echo "❌ Homebrew not found. Please install wrk manually for load testing."
-        echo "You can install it with: brew install wrk"
-    fi
-fi
+echo ""
+echo "========================================="
+echo "Step 2: Verifying Replicas"
+echo "========================================="
 
-# Perform load testing if wrk is available
-if command -v wrk &> /dev/null; then
-    echo "🔥 Starting load test with wrk..."
-    echo "Note: This test assumes the service is accessible via port forwarding or ingress"
-    
-    # Get the service endpoint
-    SERVICE_ENDPOINT=$(kubectl get service django-messaging-service -o jsonpath='{.spec.clusterIP}')
-    
-    # Start port forwarding in background
-    echo "🔗 Setting up port forwarding..."
-    kubectl port-forward service/django-messaging-service 8080:80 &
-    PORT_FORWARD_PID=$!
-    
-    # Wait for port forwarding to be ready
-    sleep 5
-    
-    # Perform load test
-    echo "⚡ Running load test..."
-    wrk -t12 -c400 -d30s http://localhost:8080/ || echo "Load test completed with warnings"
-    
-    # Kill port forwarding
-    kill $PORT_FORWARD_PID 2>/dev/null || true
-else
-    echo "⚠️  wrk not available. Skipping load test."
-    echo "To perform load testing, install wrk with: brew install wrk"
-fi
+# Check deployment status
+kubectl rollout status deployment/django-messaging-app
 
-# Monitor resource usage
-echo "📊 Monitoring resource usage..."
-kubectl top pods -l app=django-messaging
-
-# Get deployment status
-echo "📈 Deployment status:"
+echo ""
+echo "Current replica status:"
 kubectl get deployment django-messaging-app
 
-# Show replica sets
-echo "🔄 Replica sets:"
-kubectl get replicasets -l app=django-messaging
+echo ""
+echo "========================================="
+echo "Step 3: Installing wrk for Load Testing"
+echo "========================================="
 
-echo "✅ Kubernetes scaling operations completed successfully!"
+# Install wrk if not available
+if ! command -v wrk &> /dev/null; then
+    echo "Installing wrk for load testing..."
+    
+    # Check if we're on macOS or Linux
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS - install via Homebrew
+        if ! command -v brew &> /dev/null; then
+            echo "Installing Homebrew first..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        fi
+        brew install wrk
+    else
+        # Linux - install via package manager
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y wrk
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y wrk
+        elif command -v dnf &> /dev/null; then
+            sudo dnf install -y wrk
+        else
+            echo "Installing wrk from source..."
+            # Try to install from source as fallback
+            cd /tmp
+            git clone https://github.com/wg/wrk.git
+            cd wrk
+            make -j
+            sudo cp wrk /usr/local/bin/
+            cd -
+        fi
+    fi
+else
+    echo "✓ wrk is already installed"
+fi
+
+echo ""
+echo "========================================="
+echo "Step 4: Port Forwarding for Load Testing"
+echo "========================================="
+
+# Get pod name for port forwarding
+POD_NAME=$(kubectl get pods -l app=django-messaging -o jsonpath='{.items[0].metadata.name}')
+
+if [ -z "$POD_NAME" ]; then
+    echo "ERROR: No pods found for django-messaging app"
+    exit 1
+fi
+
+echo "Found pod: $POD_NAME"
+
+# Port forward in background
+echo "Setting up port forwarding to pod $POD_NAME..."
+kubectl port-forward pod/$POD_NAME 8080:8000 &
+PORT_FORWARD_PID=$!
+
+# Wait for port forwarding to be ready
+sleep 5
+
+echo "✓ Port forwarding established on localhost:8080"
+
+echo ""
+echo "========================================="
+echo "Step 5: Load Testing with wrk"
+echo "========================================="
+
+# Perform load testing
+echo "Starting load test (30 seconds, 10 connections, 2 threads)..."
+echo "Testing endpoint: http://localhost:8080/api/health/"
+
+wrk -t2 -c10 -d30s --script=load_test.lua http://localhost:8080/api/health/
+
+echo ""
+echo "Load test completed!"
+
+echo ""
+echo "========================================="
+echo "Step 6: Monitoring Resource Usage"
+echo "========================================="
+
+# Check if metrics-server is available
+if kubectl get pods -n kube-system | grep metrics-server &> /dev/null; then
+    echo "✓ Metrics server is available"
+    
+    echo ""
+    echo "CPU and Memory usage for pods:"
+    kubectl top pods -l app=django-messaging
+    
+    echo ""
+    echo "CPU and Memory usage for nodes:"
+    kubectl top nodes
+    
+    echo ""
+    echo "Resource usage for all pods:"
+    kubectl top pods --all-namespaces
+else
+    echo "⚠ Metrics server not found. Installing metrics-server..."
+    
+    # Install metrics-server
+    kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+    
+    echo "Waiting for metrics-server to be ready..."
+    sleep 30
+    
+    # Try to get metrics again
+    echo ""
+    echo "CPU and Memory usage for pods:"
+    kubectl top pods -l app=django-messaging
+fi
+
+echo ""
+echo "========================================="
+echo "Step 7: Final Status Check"
+echo "========================================="
+
+echo "Deployment status:"
+kubectl get deployment django-messaging-app
+
+echo ""
+echo "Pod status:"
+kubectl get pods -l app=django-messaging
+
+echo ""
+echo "Service status:"
+kubectl get service django-service
+
+echo ""
+echo "✓ Scaling and load testing completed successfully!"
+
+# Clean up port forwarding
+echo ""
+echo "Cleaning up port forwarding..."
+kill $PORT_FORWARD_PID 2>/dev/null || true
+
+echo "✓ Port forwarding stopped"
