@@ -17,15 +17,15 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
-          username: angell2900
+          username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Extract Metadata
@@ -33,8 +33,10 @@ jobs:
         run: |
           BRANCH=${GITHUB_REF#refs/heads/}
           SHA=${GITHUB_SHA::7}
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
+          echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v4
@@ -44,13 +46,44 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.branch }}
             ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha }}
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.timestamp }}
             ${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Notify Deployment
+      - name: Verify Image Push
+        run: |
+          echo "✅ Docker Image Build & Push Summary"
+          echo "======================================"
+          echo "Registry: ${{ env.REGISTRY }}"
+          echo "Image Name: ${{ env.IMAGE_NAME }}"
+          echo "Tags:"
+          echo "  - branch: ${{ steps.meta.outputs.branch }}"
+          echo "  - sha: ${{ steps.meta.outputs.sha }}"
+          echo "  - timestamp: ${{ steps.meta.outputs.timestamp }}"
+          echo "  - latest"
+
+      - name: Notify Deployment Success
         if: success()
         run: |
-          echo "✅ Docker image successfully built and pushed!"
-          echo "Image: ${{ env.IMAGE_NAME }}:latest"
-          echo "Tags: branch-${{ steps.meta.outputs.branch }}, sha-${{ steps.meta.outputs.sha }}"
+          echo "✅ Docker image successfully built and pushed to Docker Hub!"
+          echo "Image: ${{ env.IMAGE_NAME }}"
+          echo "Available Tags: branch-${{ steps.meta.outputs.branch }}, sha-${{ steps.meta.outputs.sha }}, latest"
+          echo ""
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Image successfully built and pushed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags**: branch, sha, timestamp, latest" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Deployment Failure
+        if: failure()
+        run: |
+          echo "❌ Docker image build or push failed!"
+          echo "## Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "❌ Docker image build/push failed" >> $GITHUB_STEP_SUMMARY
