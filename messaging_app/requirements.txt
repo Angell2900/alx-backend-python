@@ -1,11 +1,13 @@
-<<<<<<< HEAD
-asgiref==3.10.0
-Django==5.2.8
+asgiref==3.11.0
+Django>=4.2,<5.0
 djangorestframework==3.16.1
 drf-nested-routers==0.95.0
-sqlparse==0.5.3
-=======
-asgiref==3.11.0
-Django==6.0
+mysqlclient>=2.2.0
+gunicorn>=21.2.0
+python-dotenv>=1.0.0
+pytest>=7.4.0
+pytest-django>=4.5.2
+pytest-cov>=4.1.0
+flake8>=6.1.0
+coverage>=7.3.0
 sqlparse==0.5.4
->>>>>>> c89469c (Initial commit)

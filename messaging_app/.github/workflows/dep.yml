@@ -1,0 +1,86 @@
+name: CD - Build & Deploy Docker
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: angell2900/messaging-app
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: angell2900
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract Metadata
+        id: meta
+        run: |
+          BRANCH=${GITHUB_REF#refs/heads/}
+          SHA=${GITHUB_SHA::7}
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./messaging_app
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.branch }}
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ steps.meta.outputs.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Run Trivy Vulnerability Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy Security Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy'
+
+      - name: Upload Scan Results as Artifact
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-scan-results
+          path: trivy-results.sarif
+          retention-days: 30
+
+      - name: Notify Deployment
+        if: success()
+        run: |
+          echo "✅ Docker image successfully built and pushed!"
+          echo "Image: ${{ env.IMAGE_NAME }}:latest"
+          echo "Tags: branch-${{ steps.meta.outputs.branch }}, sha-${{ steps.meta.outputs.sha }}"
