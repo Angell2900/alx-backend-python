@@ -1,4 +1,28 @@
-*.pyc
+# 1. Remove the files from ALL history
+git filter-branch --tree-filter 'rm -rf messaging_app/kubectl messaging_app/minikube-linux-amd64' --prune-empty -f HEAD
+
+# 2. Clean up git refs
+git reflog expire --expire=now --all
+git gc --aggressive --prune=now
+
+# 3. Force push to remote
+git push origin main --force-with-lease# 1. Remove the files from ALL history
+git filter-branch --tree-filter 'rm -rf messaging_app/kubectl messaging_app/minikube-linux-amd64' --prune-empty -f HEAD
+
+# 2. Clean up git refs
+git reflog expire --expire=now --all
+git gc --aggressive --prune=now
+
+# 3. Force push to remote
+git push origin main --force-with-lease# 1. Remove the files from ALL history
+git filter-branch --tree-filter 'rm -rf messaging_app/kubectl messaging_app/minikube-linux-amd64' --prune-empty -f HEAD
+
+# 2. Clean up git refs
+git reflog expire --expire=now --all
+git gc --aggressive --prune=now
+
+# 3. Force push to remote
+git push origin main --force-with-lease*.pyc
 __pycache__/
 
 # Large binary files (now using Git LFS - see .gitattributes)

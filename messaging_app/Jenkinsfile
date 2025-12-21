@@ -79,8 +79,7 @@ pipeline {
                                --cov=. \
                                --cov-report=html:htmlcov \
                                --cov-report=xml:coverage.xml \
-                               --cov-config=.coveragerc \
-                               tests/ 2>&1 || true
+                               --tb=short 2>&1 || true
                     '''
                 }
             }
@@ -136,7 +135,6 @@ pipeline {
                     sh '''
                         docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} || true
                         docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest || true
-                        docker system prune -f || true
                     '''
                 }
             }
@@ -145,19 +143,13 @@ pipeline {
 
     post {
         always {
-            script {
-                echo "Pipeline execution completed"
-                cleanWs()
-            }
+            echo "Pipeline execution completed"
         }
         success {
-            echo "Pipeline succeeded! Docker image pushed to Docker Hub."
+            echo "✅ Pipeline succeeded! Docker image pushed to Docker Hub."
         }
         failure {
-            echo "Pipeline failed! Check logs for details."
-        }
-        unstable {
-            echo "Pipeline is unstable. Review test results."
+            echo "❌ Pipeline failed! Check logs for details."
         }
     }
 }
