@@ -12,7 +12,7 @@ pipeline {
         DOCKER_REGISTRY = 'angell2900'
         DOCKER_IMAGE = 'messaging-app'
         PYTHONUNBUFFERED = '1'
-        VENV_PATH = '${WORKSPACE}/messaging_app/venv'
+        VENV_PATH = '${WORKSPACE}/venv'
         PATH = '${VENV_PATH}/bin:${PATH}'
     }
 
@@ -32,7 +32,6 @@ pipeline {
                     echo "Setting up Python virtual environment"
                     sh '''
                         set -e
-                        cd messaging_app
                         python3 -m venv venv
                         . venv/bin/activate
                         pip install --upgrade pip setuptools wheel
@@ -49,7 +48,6 @@ pipeline {
                     echo "Installing project dependencies"
                     sh '''
                         set -e
-                        cd messaging_app
                         . venv/bin/activate
                         pip install -r requirements.txt
                         echo "Installed packages:"
@@ -65,7 +63,6 @@ pipeline {
                     echo "Running flake8 linting"
                     sh '''
                         set -e
-                        cd messaging_app
                         . venv/bin/activate
                         echo "Running flake8..."
                         flake8 . --config=.flake8 --count --statistics || true
@@ -80,11 +77,10 @@ pipeline {
                     echo "Running pytest with coverage"
                     sh '''
                         set -e
-                        cd messaging_app
                         . venv/bin/activate
                         mkdir -p test-results htmlcov
                         echo "Running tests..."
-                        pytest tests/ \
+                        pytest . \
                                --junitxml=test-results/results.xml \
                                --cov=. \
                                --cov-report=html:htmlcov \
@@ -101,13 +97,13 @@ pipeline {
                 script {
                     echo "Publishing test and coverage reports"
                     sh '''
-                        if [ -f "messaging_app/test-results/results.xml" ]; then
+                        if [ -f "test-results/results.xml" ]; then
                             echo "Test report found"
                         fi
                     '''
-                    junit allowEmptyResults: true, testResults: 'messaging_app/test-results/results.xml'
+                    junit allowEmptyResults: true, testResults: 'test-results/results.xml'
                     publishHTML([
-                        reportDir: 'messaging_app/htmlcov',
+                        reportDir: 'htmlcov',
                         reportFiles: 'index.html',
                         reportName: 'Coverage Report'
                     ])
@@ -121,7 +117,6 @@ pipeline {
                     echo "Building Docker image"
                     sh '''
                         set -e
-                        cd messaging_app
                         docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} .
                         docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
                         echo "Docker image built successfully"
