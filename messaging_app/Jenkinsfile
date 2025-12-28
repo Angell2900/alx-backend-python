@@ -1,147 +1,358 @@
-// ALX Backend Python - Jenkins CI/CD Pipeline
-// This pipeline pulls code from GitHub, runs tests, and deploys Docker images
-pipeline {
+// ALX Backend Python - Jenkins CI/CD Pipeline// ALX Backend Python - Jenkins CI/CD Pipeline
+
+// Comprehensive Jenkins pipeline for Django messaging app// This pipeline pulls code from GitHub, runs tests, and deploys Docker images
+
+// Includes: checkout, testing, Docker build, and Docker Hub pushpipeline {
+
     agent any
 
-    options {
+pipeline {
+
+    agent any    options {
+
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        timeout(time: 1, unit: 'HOURS')
+
+    options {        timeout(time: 1, unit: 'HOURS')
+
+        buildDiscarder(logRotator(numToKeepStr: '10'))        timestamps()
+
+        timeout(time: 1, unit: 'HOURS')    }
+
         timestamps()
-    }
 
-    environment {
+    }    environment {
+
         REPO_URL = 'https://github.com/Angell2900/alx-backend-python.git'
-        DOCKER_REGISTRY = 'angell2900'
-        DOCKER_IMAGE = 'messaging-app'
-        PYTHONUNBUFFERED = '1'
-        VENV_PATH = '${WORKSPACE}/venv'
-        PATH = '${VENV_PATH}/bin:${PATH}'
-    }
 
-    stages {
-        stage('Checkout') {
-            steps {
-                script {
-                    echo "Checking out code from ${REPO_URL}"
-                    checkout scm
-                }
-            }
-        }
+    environment {        DOCKER_REGISTRY = 'angell2900'
 
-        stage('Setup Python Environment') {
-            steps {
-                script {
-                    echo "Setting up Python virtual environment"
-                    sh '''
+        REPO_URL = 'https://github.com/Angell2900/alx-backend-python.git'        DOCKER_IMAGE = 'messaging-app'
+
+        DOCKER_REGISTRY = 'angell2900'        PYTHONUNBUFFERED = '1'
+
+        DOCKER_IMAGE = 'messaging-app'        VENV_PATH = '${WORKSPACE}/venv'
+
+        PYTHONUNBUFFERED = '1'        PATH = '${VENV_PATH}/bin:${PATH}'
+
+    }    }
+
+
+
+    stages {    stages {
+
+        stage('Checkout') {        stage('Checkout') {
+
+            steps {            steps {
+
+                script {                script {
+
+                    echo "========== STAGE: Checkout =========="                    echo "Checking out code from ${REPO_URL}"
+
+                    echo "Cloning repository: ${REPO_URL}"                    checkout scm
+
+                    checkout([                }
+
+                        $class: 'GitSCM',            }
+
+                        branches: [[name: '*/main']],        }
+
+                        userRemoteConfigs: [[url: REPO_URL]]
+
+                    ])        stage('Setup Python Environment') {
+
+                    echo "✓ Repository cloned successfully"            steps {
+
+                }                script {
+
+            }                    echo "Setting up Python virtual environment"
+
+        }                    sh '''
+
                         set -e
-                        python3 -m venv venv
-                        . venv/bin/activate
-                        pip install --upgrade pip setuptools wheel
-                        echo "Python version:"
-                        python --version
-                    '''
-                }
-            }
-        }
 
-        stage('Install Dependencies') {
-            steps {
-                script {
-                    echo "Installing project dependencies"
-                    sh '''
-                        set -e
-                        . venv/bin/activate
-                        pip install -r requirements.txt
-                        echo "Installed packages:"
-                        pip list
-                    '''
-                }
-            }
-        }
+        stage('Setup Environment') {                        python3 -m venv venv
 
-        stage('Run Linting') {
-            steps {
-                script {
-                    echo "Running flake8 linting"
-                    sh '''
-                        set -e
-                        . venv/bin/activate
-                        echo "Running flake8..."
-                        flake8 . --config=.flake8 --count --statistics || true
+            steps {                        . venv/bin/activate
+
+                script {                        pip install --upgrade pip setuptools wheel
+
+                    echo "========== STAGE: Setup Environment =========="                        echo "Python version:"
+
+                    dir('messaging_app') {                        python --version
+
+                        sh '''                    '''
+
+                            set -e                }
+
+                            echo "Creating Python virtual environment..."            }
+
+                            python3 -m venv venv        }
+
+                            . venv/bin/activate
+
+                            echo "Upgrading pip, setuptools, and wheel..."        stage('Install Dependencies') {
+
+                            pip install --upgrade pip setuptools wheel            steps {
+
+                            echo "Python version:"                script {
+
+                            python --version                    echo "Installing project dependencies"
+
+                            echo "✓ Environment setup complete"                    sh '''
+
+                        '''                        set -e
+
+                    }                        . venv/bin/activate
+
+                }                        pip install -r requirements.txt
+
+            }                        echo "Installed packages:"
+
+        }                        pip list
+
                     '''
-                }
-            }
+
+        stage('Install Dependencies') {                }
+
+            steps {            }
+
+                script {        }
+
+                    echo "========== STAGE: Install Dependencies =========="
+
+                    dir('messaging_app') {        stage('Run Linting') {
+
+                        sh '''            steps {
+
+                            set -e                script {
+
+                            . venv/bin/activate                    echo "Running flake8 linting"
+
+                            echo "Installing project dependencies from requirements.txt..."                    sh '''
+
+                            pip install -r requirements.txt                        set -e
+
+                            echo "Installed packages:"                        . venv/bin/activate
+
+                            pip list                        echo "Running flake8..."
+
+                            echo "✓ Dependencies installed successfully"                        flake8 . --config=.flake8 --count --statistics || true
+
+                        '''                    '''
+
+                    }                }
+
+                }            }
+
+            }        }
+
         }
 
         stage('Run Tests & Coverage') {
-            steps {
-                script {
-                    echo "Running pytest with coverage"
-                    sh '''
-                        set -e
-                        . venv/bin/activate
-                        mkdir -p test-results htmlcov
-                        echo "Running tests..."
-                        pytest . \
-                               --junitxml=test-results/results.xml \
-                               --cov=. \
-                               --cov-report=html:htmlcov \
-                               --cov-report=xml:coverage.xml \
-                               --cov-report=term \
-                               -v --tb=short 2>&1 || true
-                    '''
-                }
-            }
-        }
 
-        stage('Publish Test Reports') {
-            steps {
-                script {
-                    echo "Publishing test and coverage reports"
-                    sh '''
-                        if [ -f "test-results/results.xml" ]; then
-                            echo "Test report found"
-                        fi
-                    '''
-                    junit allowEmptyResults: true, testResults: 'test-results/results.xml'
-                    publishHTML([
-                        reportDir: 'htmlcov',
-                        reportFiles: 'index.html',
-                        reportName: 'Coverage Report'
-                    ])
-                }
-            }
-        }
+        stage('Run Linting') {            steps {
 
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    echo "Building Docker image"
-                    sh '''
-                        set -e
-                        docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} .
-                        docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
-                        echo "Docker image built successfully"
-                    '''
-                }
-            }
-        }
+            steps {                script {
 
-        stage('Push to Docker Hub') {
-            when {
-                branch 'main'
-            }
-            steps {
+                script {                    echo "Running pytest with coverage"
+
+                    echo "========== STAGE: Run Linting =========="                    sh '''
+
+                    dir('messaging_app') {                        set -e
+
+                        sh '''                        . venv/bin/activate
+
+                            set -e                        mkdir -p test-results htmlcov
+
+                            . venv/bin/activate                        echo "Running tests..."
+
+                            echo "Running flake8 code quality checks..."                        pytest . \
+
+                            flake8 . --config=.flake8 --count --statistics || true                               --junitxml=test-results/results.xml \
+
+                            echo "⚠ Flake8 check completed (non-blocking)"                               --cov=. \
+
+                        '''                               --cov-report=html:htmlcov \
+
+                    }                               --cov-report=xml:coverage.xml \
+
+                }                               --cov-report=term \
+
+            }                               -v --tb=short 2>&1 || true
+
+        }                    '''
+
+                }
+
+        stage('Run Tests') {            }
+
+            steps {        }
+
                 script {
-                    echo "Pushing Docker image to Docker Hub"
-                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh '''
-                            set -e
-                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+
+                    echo "========== STAGE: Run Tests =========="        stage('Publish Test Reports') {
+
+                    dir('messaging_app') {            steps {
+
+                        sh '''                script {
+
+                            set -e                    echo "Publishing test and coverage reports"
+
+                            . venv/bin/activate                    sh '''
+
+                            mkdir -p test-results htmlcov                        if [ -f "test-results/results.xml" ]; then
+
+                            echo "Running pytest with coverage..."                            echo "Test report found"
+
+                            pytest tests/ \                        fi
+
+                                --junitxml=test-results/results.xml \                    '''
+
+                                --cov=. \                    junit allowEmptyResults: true, testResults: 'test-results/results.xml'
+
+                                --cov-report=html:htmlcov \                    publishHTML([
+
+                                --cov-report=xml:coverage.xml \                        reportDir: 'htmlcov',
+
+                                --cov-report=term \                        reportFiles: 'index.html',
+
+                                -v --tb=short || true                        reportName: 'Coverage Report'
+
+                            echo "✓ Tests completed"                    ])
+
+                        '''                }
+
+                    }            }
+
+                }        }
+
+            }
+
+        }        stage('Build Docker Image') {
+
+            steps {
+
+        stage('Publish Test Reports') {                script {
+
+            steps {                    echo "Building Docker image"
+
+                script {                    sh '''
+
+                    echo "========== STAGE: Publish Test Reports =========="                        set -e
+
+                    dir('messaging_app') {                        docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} .
+
+                        sh '''                        docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+
+                            echo "Publishing test and coverage reports..."                        echo "Docker image built successfully"
+
+                            if [ -f "test-results/results.xml" ]; then                    '''
+
+                                echo "✓ Test report found"                }
+
+                            fi            }
+
+                            if [ -d "htmlcov" ]; then        }
+
+                                echo "✓ Coverage report found"
+
+                            fi        stage('Push to Docker Hub') {
+
+                        '''            when {
+
+                        junit allowEmptyResults: true, testResults: 'test-results/results.xml'                branch 'main'
+
+                        publishHTML([            }
+
+                            reportDir: 'htmlcov',            steps {
+
+                            reportFiles: 'index.html',                script {
+
+                            reportName: 'Coverage Report'                    echo "Pushing Docker image to Docker Hub"
+
+                        ])                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+
+                    }                        sh '''
+
+                }                            set -e
+
+            }                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+
+        }                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+
                             docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+
+        stage('Build Docker Image') {                            docker logout
+
+            steps {                            echo "Docker image pushed successfully"
+
+                script {                        '''
+
+                    echo "========== STAGE: Build Docker Image =========="                    }
+
+                    dir('messaging_app') {                }
+
+                        sh '''            }
+
+                            set -e        }
+
+                            echo "Building Docker image..."
+
+                            docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} .        stage('Cleanup') {
+
+                            docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest            steps {
+
+                            echo "✓ Docker image built successfully"                script {
+
+                            docker images | grep messaging-app                    echo "Cleaning up Docker images"
+
+                        '''                    sh '''
+
+                    }                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} || true
+
+                }                        docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest || true
+
+            }                    '''
+
+        }                }
+
+            }
+
+        stage('Push to Docker Hub') {        }
+
+            when {    }
+
+                branch 'main'
+
+            }    post {
+
+            steps {        always {
+
+                script {            echo "Pipeline execution completed"
+
+                    echo "========== STAGE: Push to Docker Hub =========="            cleanWs()
+
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {        }
+
+                        sh '''        success {
+
+                            set -e            echo "✅ Pipeline succeeded! Docker image pushed to Docker Hub."
+
+                            echo "Logging into Docker Hub..."        }
+
+                            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin        failure {
+
+                            echo "Pushing Docker images to Docker Hub..."            echo "❌ Pipeline failed! Check logs for details."
+
+                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}        }
+
+                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest    }
+
+                            echo "Logging out from Docker Hub..."}
+
                             docker logout
-                            echo "Docker image pushed successfully"
+
+                            echo "✓ Docker images pushed successfully to Docker Hub"
                         '''
                     }
                 }
@@ -151,11 +362,14 @@ pipeline {
         stage('Cleanup') {
             steps {
                 script {
-                    echo "Cleaning up Docker images"
+                    echo "========== STAGE: Cleanup =========="
                     sh '''
+                        echo "Cleaning up Docker images..."
                         docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} || true
                         docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest || true
+                        echo "✓ Cleanup completed"
                     '''
+                    cleanWs()
                 }
             }
         }
@@ -163,15 +377,22 @@ pipeline {
 
     post {
         always {
-            echo "Pipeline execution completed"
-            cleanWs()
+            echo "========== BUILD COMPLETED =========="
+            script {
+                if (currentBuild.result == 'SUCCESS') {
+                    echo "✅ Pipeline succeeded!"
+                } else if (currentBuild.result == 'FAILURE') {
+                    echo "❌ Pipeline failed!"
+                } else {
+                    echo "⚠️ Pipeline status: ${currentBuild.result}"
+                }
+            }
         }
         success {
-            echo "✅ Pipeline succeeded! Docker image pushed to Docker Hub."
+            echo "✅ Pipeline execution successful"
         }
         failure {
-            echo "❌ Pipeline failed! Check logs for details."
+            echo "❌ Pipeline execution failed"
         }
     }
 }
-
