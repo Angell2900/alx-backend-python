@@ -1,3 +1,5 @@
+// ALX Backend Python - Jenkins CI/CD Pipeline
+// This pipeline pulls code from GitHub, runs tests, and deploys Docker images
 pipeline {
     agent any
 
